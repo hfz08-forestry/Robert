@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <title>Sistem SMS JPSM (PWA)</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#1a237e">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background-color: #f1f5f9; }
+        
+        #app-content { flex-grow: 1; position: relative; width: 100%; height: calc(100vh - 62px); overflow: hidden; }
+        
+        #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        .tab-pane { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        .tab-pane.active { display: block; }
+        
+        .bottom-nav { position:relative; z-index: 2000; height: 62px; background: #ffffff; display: flex; justify-content: space-around; align-items: center; box-shadow: 0 -3px 12px rgba(0,0,0,0.06); padding-bottom: env(safe-area-inset-bottom); border-top: 1px solid #e2e8f0; }
+        .nav-item { flex: 1; text-align: center; color: #64748b; font-size: 0.68rem; font-weight: 600; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0; transition: all 0.2s; }
+        .nav-item.active { color: #1a237e; }
+        .nav-icon { font-size: 1.25rem; transition: transform 0.2s; filter: grayscale(80%); opacity: 0.7; }
+        .nav-item.active .nav-icon { transform: translateY(-2px); filter: grayscale(0%); opacity: 1; }
+
+        .floating-panel { position: absolute; top: 15px; left: 15px; width: calc(100% - 30px); max-width: 360px; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.6); user-select: none; touch-action: none; transition: box-shadow 0.2s; pointer-events: auto; display: flex; flex-direction: column; max-height: 75vh; }
+        .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: grab; border-bottom: 1px solid #f1f5f9; flex-shrink: 0;}
+        .panel-header:active { cursor: grabbing; }
+        .panel-title { margin: 0; color: #1a237e; font-size: 1rem; font-weight: 700; display: flex; align-items: center; gap: 6px; pointer-events: none; }
+        .drag-hint { font-size: 0.68rem; color: #94a3b8; font-weight: 400; }
+        .header-actions { display: flex; align-items: center; gap: 6px; }
+        .btn-icon { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; color: #475569; }
+        .panel-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; user-select: auto; flex-grow:1;}
+        .floating-panel.collapsed { width: auto; max-width: 85vw; }
+        .floating-panel.collapsed .panel-header { border-bottom: none; }
+        .floating-panel.collapsed .panel-body { display: none; }
+        
+        .rso-header { display: flex; gap: 8px; font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 8px; text-align: center; padding-right: 38px;}
+        .rso-row { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+        .rso-input { padding: 12px 6px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.8rem; font-family: 'Inter', sans-serif; text-align: center; background: #f8fafc; transition: border 0.2s; min-width:0; width:100%; box-sizing:border-box;}
+        .rso-input:focus { outline: none; border-color: #3b82f6; background: #fff;}
+        .rso-input.type { flex: 0.8; font-weight: 600;}
+        .rso-input.name { flex: 1; text-align: left; }
+        .rso-input.coord { flex: 1.5; }
+        .btn-del { width: 35px; height: 40px; background: #fee2e2; color: #ef4444; border: none; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; transition: 0.2s;}
+        
+        .route-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-top: 10px; background: #fff; text-align: center; border-radius: 8px; overflow: hidden; }
+        .route-table th { background: #e2e8f0; color: #334155; padding: 6px 4px; font-weight: 700; border: 1px solid #cbd5e1; }
+        .route-table td { padding: 6px 4px; border: 1px solid #e2e8f0; color: #0f172a; font-weight: 600; vertical-align: middle;}
+        .divider { height: 1px; background: #cbd5e1; margin: 15px 0; }
+
+        .upload-group { display: flex; gap: 8px; }
+        .btn { flex: 1; padding: 12px; font-size: 0.9rem; font-weight: 600; text-align: center; border-radius: 10px; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition:0.2s;}
+        .btn-upload { background-color: #f1f5f9; color: #475569; border: 1.5px dashed #cbd5e1; }
+        .btn-upload.success { background-color: #ecfdf5; color: #059669; border-color: #34d399; border-style: solid; }
+        .btn-primary { background-color: #2563eb; color: #ffffff; width: 100%; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);}
+        .btn-primary:disabled { background-color: #cbd5e1; cursor: not-allowed; box-shadow: none; color: #94a3b8;}
+        .btn-export { background-color: #f59e0b; color: #ffffff; width: 100%; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); display: none;}
+        .btn-danger-outline { background: #f8fafc; color: #ef4444; border: 1px solid #cbd5e1; padding: 8px; display: flex; justify-content:center; align-items:center; border-radius: 8px; font-weight: 600; font-size: 0.8rem; cursor: pointer;}
+        
+        .gt-status { background: #f8fafc; border-radius: 8px; padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; border: 1px solid #e2e8f0; }
+        .gt-badge { background: #e2e8f0; color: #475569; padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.75rem;}
+        .gt-badge.active { background: #3b82f6; color: white; }
+        
+        .summary-grid { display: grid; gap: 8px; margin-top: 4px;}
+        .summary-card { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 8px; border-radius: 10px; text-align: center; display:flex; flex-direction: column; justify-content:center;}
+        .summary-val { font-size: 1rem; font-weight: 800; color: #166534; }
+        .summary-lbl { font-size: 0.65rem; color: #15803d; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-top:3px;}
+
+        /* MARKER UI PETA */
+        .leaflet-control-layers { border-radius: 12px !important; border: none !important; box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important; padding: 6px !important;}
+        .station-label { font-family: 'Inter', sans-serif; font-weight: 900; font-size: 12px; letter-spacing: 0.5px; color: #fff; background: rgba(0, 0, 0, 0.85); border-radius: 4px; padding: 3px 7px; border: 1px solid rgba(255,255,255,0.4); text-shadow: 1px 1px 2px rgba(0,0,0,0.8); }
+        .pi-label { background: #7e22ce; border-color: #c084fc; } 
+        .plot-label { font-size: 9px; font-weight: 800; color: #0f172a; background: rgba(255,255,255,0.9); border: 1px solid #cbd5e1; border-radius: 4px; padding: 1px 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
+        .gi-label { font-size: 10px; font-weight: 800; color: #1e3a8a; background: rgba(219,234,254,0.95); border: 1px solid #1e40af; border-radius: 4px; padding: 2px 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap;}
+        
+        .blok-label { font-size: 12px; font-weight: 900; color: #fff; background: #7c3aed; border: 1px solid #4c1d95; border-radius: 4px; padding: 2px 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); white-space: nowrap;}
+        .tag-plot-label { font-size: 9px; font-weight: 800; color: #6d28d9; background: rgba(237,233,254,0.85); border: 1px solid #c4b5fd; border-radius: 4px; padding: 1px 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);}
+
+        .pgt-tgt-label { font-weight: 800; font-size: 11px; color: #fff; border-radius: 4px; padding: 3px 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); white-space: nowrap; display: block; text-align: center; }
+        .pgt-label { background: #ef4444; border: 1px solid #991b1b; }
+        .tgt-label { background: #0f172a; border: 1px solid #000; }
+        .prs-label { font-family: 'Inter', sans-serif; font-size: 8px; font-weight: 900; color: #fff; background: #dc2626; border: 1px solid #7f1d1d; border-radius: 50%; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+        
+        #minimal-legend { position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(5px); padding: 8px 16px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); gap: 12px; align-items: center; z-index: 1000; font-size: 0.7rem; font-weight: 600; color: #334155; white-space: nowrap; overflow-x: auto; max-width: 90vw; pointer-events:auto; display:flex;}
+        .leg-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+        #minimal-legend::-webkit-scrollbar { display: none; }
+
+        .placeholder-page { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.6); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #475569; pointer-events: auto; margin: 15px; height: calc(100% - 30px); box-sizing: border-box; }
+        .placeholder-icon { font-size: 3.5rem; margin-bottom: 12px; opacity: 0.6; }
+        .placeholder-title { font-size: 1.35rem; font-weight: 700; color: #1e293b; margin-bottom: 8px; }
+        .placeholder-desc { font-size: 0.88rem; max-width: 340px; line-height: 1.5; color: #64748b; }
+        .tag-badge { margin-top: 16px; font-size: 0.75rem; background: #ffffff; padding: 6px 14px; border-radius: 999px; border: 1px solid #cbd5e1; font-weight: 600; color: #2563eb; }
+    </style>
+</head>
+<body>
+
+    <div id="app-content">
+        <!-- PETA UTAMA BERADA DI BELAKANG SEMUA TAB -->
+        <div id="map"></div>
+        
+        <!-- PETUNJUK WARNA GLOBAL -->
+        <div id="minimal-legend">
+            <div><span class="leg-dot" style="background:#059669;"></span>Sem</div>
+            <div><span class="leg-dot" style="background:red;"></span>GT</div>
+            
+            <div id="leg-pref1"><span class="leg-dot" style="background:blue;"></span>GI</div>
+            <div id="leg-pref2"><span class="leg-dot" style="background:#ff9900;"></span>Petak</div>
+            <div id="leg-tag1" style="display:none;"><span class="leg-dot" style="background:#8b5cf6;"></span>Garis Kawalan</div>
+            <div id="leg-tag2" style="display:none;"><span class="leg-dot" style="background:rgba(237,233,254,0.9); border:1px solid #c4b5fd;"></span>Blok Tagging</div>
+            <div id="leg-sem1"><span class="leg-dot" style="background:#dc2626;"></span>Pokok Ruj</div>
+        </div>
+
+        <!-- 1. TAB SEMPADAN -->
+        <div id="tab-sempadan" class="tab-pane active">
+            <div id="panel-sempadan" class="floating-panel">
+                <div class="panel-header" id="header-sempadan">
+                    <div><h2 class="panel-title">🗺️ Sempadan Kawasan</h2><span class="drag-hint">Pegang sini untuk alih</span></div>
+                    <div class="header-actions"><button type="button" id="btnToggleSempadan" class="btn-icon">➖</button></div>
+                </div>
+                
+                <div class="panel-body">
+                    <div style="display:flex; gap:8px; margin-bottom:12px;">
+                        <input type="file" id="inputUploadSem" accept=".csv, .kml" style="display:none;" />
+                        <button id="btnUploadSem" class="btn btn-upload" style="flex:1; padding:8px; font-size:0.8rem; flex-direction:row; gap:6px;">📂 Muat Naik (CSV/KML)</button>
+                        <button id="btnKosongkanSem" class="btn-danger-outline" style="flex:0.4; padding:8px; display:flex;">🗑️ Padam</button>
+                    </div>
+
+                    <select id="datumSelect" class="rso-input" style="width: 100%; margin-bottom: 12px; text-align: left; padding: 8px; font-weight:bold; background:#e0f2fe; border-color:#7dd3fc; color:#0369a1;">
+                        <option value="EPSG:3168">🗺️ RSO Malaya (MRT68) - Meter</option>
+                        <option value="EPSG:3376">🛰️ RSO Malaya (GDM2000) - Meter</option>
+                        <option value="EPSG:4326">🌐 WGS84 (Satelit/KML) - Darjah</option>
+                    </select>
+
+                    <div class="rso-header">
+                        <div style="flex:0.8; text-align:left;">Jenis</div>
+                        <div style="flex:1; text-align:left;">Label</div>
+                        <div style="flex:1.5; color:#ea580c;">X (Timuran)</div>
+                        <div style="flex:1.5; color:#ea580c;">Y (Utaraan)</div>
+                    </div>
+                    
+                    <div id="rso-container"></div>
+                    
+                    <div style="display:flex; gap:10px; margin-top:10px;">
+                        <button id="btnAddRSO" class="btn" style="flex:1; background:#e2e8f0; color:#334155; flex-direction:row; padding:10px;">➕ Tambah Baris</button>
+                        <button id="btnSelesaiRSO" class="btn btn-primary" style="flex:1.5; flex-direction:row; padding:10px;">✅ Simpan & Lukis</button>
+                    </div>
+
+                    <div id="summarySempadan" style="display:none; margin-top: 15px;">
+                        <div class="divider"></div>
+                        <div class="summary-grid" style="grid-template-columns: 1fr 1fr;">
+                            <div class="summary-card" style="background:#eff6ff; border-color:#bfdbfe;"><div id="sumLuas" class="summary-val" style="color:#1d4ed8;">-</div><div class="summary-lbl" style="color:#2563eb;">Keluasan (Hektar)</div></div>
+                            <div class="summary-card" style="background:#eff6ff; border-color:#bfdbfe;"><div id="sumJarakSem" class="summary-val" style="color:#1d4ed8;">-</div><div class="summary-lbl" style="color:#2563eb;">Perimeter (m)</div></div>
+                            <div class="summary-card" style="grid-column: span 2;"><div id="sumPokokRuj" class="summary-val">-</div><div class="summary-lbl">Jumlah Pokok Rujukan Sempadan (~40m)</div></div>
+                        </div>
+
+                        <table class="route-table">
+                            <thead><tr><th style="width:25%;">Laluan</th><th style="width:30%;">Koord Mula (X, Y)</th><th style="width:15%;">Jarak(m)</th><th style="width:15%;">Bearing</th><th style="width:15%;">Pokok</th></tr></thead>
+                            <tbody id="tblLaluanSempadan"></tbody>
+                        </table>
+                        
+                        <div style="display:flex; gap:10px; margin-top: 15px;">
+                            <button type="button" id="btnExportSemKML" class="btn btn-export" style="display:block; flex:1; padding:10px;">⬇️ Muat Turun KML Sempadan</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. TAB PRE-F -->
+        <div id="tab-pref" class="tab-pane">
+            <div id="panel-pref" class="floating-panel">
+                <div class="panel-header" id="header-pref">
+                    <div><h2 class="panel-title">🌲 Pre-F Inventori</h2><span class="drag-hint">Pegang sini untuk alih</span></div>
+                    <div class="header-actions"><button type="button" id="btnTogglePref" class="btn-icon">➖</button></div>
+                </div>
+                
+                <div class="panel-body">
+                    <div class="upload-group">
+                        <input type="file" id="inputStesen" accept=".csv" style="display:none;" />
+                        <button type="button" id="btnTriggerStesen" class="btn btn-upload"><span style="font-size: 1.2rem;">📍</span><span>1. Stesen</span><span id="statusStesen" style="font-size:0.7rem; color:#94a3b8; font-weight:400;">(Guna Tab Sempadan)</span></button>
+                        <input type="file" id="inputLine" accept=".csv" style="display:none;" />
+                        <button type="button" id="btnTriggerLine" class="btn btn-upload"><span style="font-size: 1.2rem;">🗺️</span><span>2. Sempadan</span><span id="statusLine" style="font-size:0.7rem; color:#94a3b8; font-weight:400;">(Guna Tab Sempadan)</span></button>
+                    </div>
+                    <div class="gt-status"><span style="color:#64748b; font-weight:500;">Mula (PGT)</span><span id="pgtDisplay" class="gt-badge">Tunggu...</span></div>
+                    <div class="gt-status"><span style="color:#64748b; font-weight:500;">Tamat (TGT)</span><span id="tgtDisplay" class="gt-badge">Tunggu...</span></div>
+                    <button type="button" id="btnResetGT" class="btn-danger-outline" style="display:none;">Batal Pilihan Garis Tapak</button>
+                    <button type="button" id="btnGenerate" class="btn btn-primary" disabled>⚡ Jana Grid Petak Pre-F</button>
+
+                    <div id="summaryCardsPref" class="summary-grid" style="display:none; grid-template-columns: 1fr 1fr;">
+                        <div class="summary-card"><div id="sumGtDist" class="summary-val">-</div><div class="summary-lbl">Jarak GT (m)</div></div>
+                        <div class="summary-card"><div id="sumGtBearing" class="summary-val">-</div><div class="summary-lbl">Bearing GT (&deg;)</div></div>
+                        <div class="summary-card" style="background:#f0fdfa; border-color:#ccfbf1;"><div id="sumGiBearingKanan" class="summary-val" style="color:#0f766e;">-</div><div class="summary-lbl" style="color:#0d9488;">Bearing GI Kanan (&deg;)</div></div>
+                        <div class="summary-card" style="background:#f0fdfa; border-color:#ccfbf1;"><div id="sumGiBearingKiri" class="summary-val" style="color:#0f766e;">-</div><div class="summary-lbl" style="color:#0d9488;">Bearing GI Kiri (&deg;)</div></div>
+                        <div class="summary-card"><div id="sumGiCount" class="summary-val" style="color:#0369a1;">-</div><div class="summary-lbl" style="color:#0284c7;">Jum. GI</div></div>
+                        <div class="summary-card"><div id="sumPetakCount" class="summary-val" style="color:#b45309;">-</div><div class="summary-lbl" style="color:#d97706;">Jum. Petak</div></div>
+                    </div>
+                    <button type="button" id="btnExportKML" class="btn btn-export">⬇️ Muat Turun KML (AlpineQuest)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. TAB TAGGING (PENANDAAN POKOK) -->
+        <div id="tab-tagging" class="tab-pane">
+            <div id="panel-tagging" class="floating-panel">
+                <div class="panel-header" id="header-tagging">
+                    <div><h2 class="panel-title">🏷️ Pelan Penandaan Pokok</h2><span class="drag-hint">Pegang sini untuk alih</span></div>
+                    <div class="header-actions"><button type="button" id="btnToggleTagging" class="btn-icon">➖</button></div>
+                </div>
+                
+                <div class="panel-body">
+                    <p style="font-size:0.75rem; color:#64748b; margin:0 0 10px 0; line-height:1.4;">Janaan Garis Kawalan (setiap 50m) dan Grid Petak 50x50m. Klik stesen rujukan di peta untuk set PGT & TGT.</p>
+                    
+                    <div class="gt-status"><span style="color:#64748b; font-weight:500;">Mula (PGT)</span><span id="pgtDisplayTag" class="gt-badge">Tunggu...</span></div>
+                    <div class="gt-status"><span style="color:#64748b; font-weight:500;">Tamat (TGT)</span><span id="tgtDisplayTag" class="gt-badge">Tunggu...</span></div>
+                    <button type="button" id="btnResetGTTag" class="btn-danger-outline" style="display:none;">Batal Pilihan Garis Tapak</button>
+                    
+                    <button type="button" id="btnGenerateTagging" class="btn btn-primary" style="background:#8b5cf6; margin-top:10px;" disabled>⚡ Jana Blok & Petak (50x50m)</button>
+                    
+                    <!-- RUMUSAN TAGGING DIPERLUAS -->
+                    <div id="summaryCardsTagging" class="summary-grid" style="display:none; grid-template-columns: 1fr 1fr 1fr; margin-top:15px;">
+                        <div class="summary-card" style="background:#faf5ff; border-color:#e9d5ff;"><div id="sumTagGtDist" class="summary-val" style="color:#7e22ce;">-</div><div class="summary-lbl" style="color:#9333ea;">Jarak GT (m)</div></div>
+                        <div class="summary-card" style="background:#faf5ff; border-color:#e9d5ff;"><div id="sumTagBlokCount" class="summary-val" style="color:#7e22ce;">-</div><div class="summary-lbl" style="color:#9333ea;">Jumlah Blok</div></div>
+                        <div class="summary-card" style="background:#faf5ff; border-color:#e9d5ff;"><div id="sumTagPetakCount" class="summary-val" style="color:#7e22ce;">-</div><div class="summary-lbl" style="color:#9333ea;">Jumlah Petak</div></div>
+                    </div>
+                    
+                    <table class="route-table" id="tblTaggingBlok" style="display:none; margin-top: 10px;">
+                        <thead><tr><th>Blok Bancian</th><th>Bilangan Petak (50x50m)</th></tr></thead>
+                        <tbody id="tblTaggingBlokBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-postf" class="tab-pane"><div class="placeholder-page"><div class="placeholder-icon">🌳</div><div class="placeholder-title">Post-F Inventori</div><div class="tag-badge">Sedia Untuk Dibangunkan</div></div></div>
+        <div id="tab-settings" class="tab-pane"><div class="placeholder-page"><div class="placeholder-icon">⚙️</div><div class="placeholder-title">Tetapan & Maklumat</div><div class="tag-badge">Versi 46.0 (Rumusan Petak Tagging)</div></div></div>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="switchTab('tab-sempadan', this)"><span class="nav-icon">🗺️</span><span>Sempadan</span></div>
+        <div class="nav-item" onclick="switchTab('tab-pref', this)"><span class="nav-icon">🌲</span><span>Pre-F</span></div>
+        <div class="nav-item" onclick="switchTab('tab-tagging', this)"><span class="nav-icon">🏷️</span><span>Tagging</span></div>
+        <div class="nav-item" onclick="switchTab('tab-postf', this)"><span class="nav-icon">🌳</span><span>Post-F</span></div>
+        <div class="nav-item" onclick="switchTab('tab-settings', this)"><span class="nav-icon">⚙️</span><span>Tetapan</span></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+
+    <script>
+        // PROJ4JS CALIBRATION
+        proj4.defs("EPSG:3168", "+proj=omerc +no_uoff +lat_0=4 +lonc=102.25 +alpha=323.0257905 +gamma=323.130102361111 +k=0.99984 +x_0=804671.299 +y_0=0 +ellps=evrst30 +towgs84=-11,851,5,0,0,0,0 +units=m +no_defs");
+        proj4.defs("EPSG:3376", "+proj=omerc +lat_0=4 +lonc=102.25 +alpha=323.0257964666666 +k=0.99984 +x_0=804671.299775 +y_0=0 +no_uoff +gamma=323.0257964666666 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+
+        // STATE AKTIF
+        var currentActiveTab = 'tab-sempadan';
+
+        // PETA UTAMA
+        var map = L.map('map', {zoomControl: false}).setView([4.2105, 101.9758], 6);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        var topoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+        var googleSat = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{ maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3'] });
+        var googleHybrid = L.tileLayer('http://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{ maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3'] });
+        var esriTopo = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+
+        var baseMaps = { "🌍 OpenTopoMap": topoMap, "🗺️ Esri Topo": esriTopo, "🛰️ Google Satelit": googleSat, "📍 Google Hibrid": googleHybrid };
+        L.control.layers(baseMaps, null, {position: 'topright'}).addTo(map);
+        L.control.scale({imperial: false, position: 'bottomleft'}).addTo(map);
+
+        // KUMPULAN LAYER
+        var sempadanLayer = L.geoJSON().addTo(map);
+        var stesenLayer = L.layerGroup().addTo(map);
+        var pokokRujukanLayer = L.layerGroup().addTo(map); 
+        
+        var gtLayer = L.geoJSON(null, { style: { color: 'red', weight: 4, dashArray: '6, 8' } }).addTo(map);
+        var markersLayer = L.layerGroup().addTo(map);
+        
+        // Layer Khas Pre-F
+        var giLayer = L.layerGroup().addTo(map);
+        var petakLayer = L.layerGroup().addTo(map);
+        
+        // Layer Khas Tagging
+        var garisKawalanLayer = L.layerGroup();
+        var blokTaggingLayer = L.layerGroup();
+        
+        var polygonFeature = null, isStesenLoaded = false, isLineLoaded = false;
+        var pgtPoint = null, pgtName = null, tgtPoint = null, tgtName = null;
+        var kmlData = { sempadan: null, gt: null, pgtMarker: null, tgtMarker: null, giLines: [], petakPolygons: [], petakLabels: [], giLabels: [], piData: [], stesenSempadan: [], pokokRujukan: [] };
+
+        // FUNGSI PERTUKARAN TAB PINTAR
+        function switchTab(tabId, element) {
+            document.querySelectorAll('.tab-pane').forEach(function(pane) { pane.classList.remove('active'); });
+            document.querySelectorAll('.nav-item').forEach(function(nav) { nav.classList.remove('active'); });
+            document.getElementById(tabId).classList.add('active');
+            currentActiveTab = tabId;
+            
+            if(!element) {
+                var targetIcon = ''; 
+                if(tabId === 'tab-pref') targetIcon = '🌲';
+                else if(tabId === 'tab-sempadan') targetIcon = '🗺️';
+                else if(tabId === 'tab-tagging') targetIcon = '🏷️';
+                document.querySelectorAll('.nav-item').forEach(function(nav) { if(nav.innerHTML.includes(targetIcon)) nav.classList.add('active'); });
+            } else { element.classList.add('active'); }
+
+            if (typeof map !== 'undefined') {
+                if (tabId === 'tab-sempadan') {
+                    if (!map.hasLayer(pokokRujukanLayer)) map.addLayer(pokokRujukanLayer);
+                    document.getElementById('leg-sem1').style.display = 'block';
+                } else {
+                    if (map.hasLayer(pokokRujukanLayer)) map.removeLayer(pokokRujukanLayer);
+                    document.getElementById('leg-sem1').style.display = 'none';
+                }
+
+                if (tabId === 'tab-pref') {
+                    if (!map.hasLayer(giLayer)) map.addLayer(giLayer);
+                    if (!map.hasLayer(petakLayer)) map.addLayer(petakLayer);
+                    document.getElementById('leg-pref1').style.display = 'block';
+                    document.getElementById('leg-pref2').style.display = 'block';
+                } else {
+                    if (map.hasLayer(giLayer)) map.removeLayer(giLayer);
+                    if (map.hasLayer(petakLayer)) map.removeLayer(petakLayer);
+                    document.getElementById('leg-pref1').style.display = 'none';
+                    document.getElementById('leg-pref2').style.display = 'none';
+                }
+                
+                if (tabId === 'tab-tagging') {
+                    if (!map.hasLayer(garisKawalanLayer)) map.addLayer(garisKawalanLayer);
+                    if (!map.hasLayer(blokTaggingLayer)) map.addLayer(blokTaggingLayer);
+                    document.getElementById('leg-tag1').style.display = 'block';
+                    document.getElementById('leg-tag2').style.display = 'block';
+                } else {
+                    if (map.hasLayer(garisKawalanLayer)) map.removeLayer(garisKawalanLayer);
+                    if (map.hasLayer(blokTaggingLayer)) map.removeLayer(blokTaggingLayer);
+                    document.getElementById('leg-tag1').style.display = 'none';
+                    document.getElementById('leg-tag2').style.display = 'none';
+                }
+                
+                setTimeout(function() { map.invalidateSize(); }, 120);
+            }
+        }
+
+        // PANEL TERAPUNG DRAGGABLE
+        function makePanelDraggable(panelId, headerId, toggleId) {
+            var panel = document.getElementById(panelId), header = document.getElementById(headerId), toggleBtn = document.getElementById(toggleId);
+            L.DomEvent.disableClickPropagation(panel); L.DomEvent.disableScrollPropagation(panel);
+            toggleBtn.addEventListener('click', function(e) { e.stopPropagation(); panel.classList.toggle('collapsed'); toggleBtn.innerText = panel.classList.contains('collapsed') ? '➕' : '➖'; });
+            var isDragging = false, startX, startY, initialLeft, initialTop;
+            header.addEventListener('mousedown', function(e) { if (e.target === toggleBtn) return; isDragging = true; var r = panel.getBoundingClientRect(); startX = e.clientX; startY = e.clientY; initialLeft = r.left; initialTop = r.top; panel.style.transform = 'none'; panel.style.left = initialLeft + 'px'; panel.style.top = initialTop + 'px'; window.addEventListener('mousemove', onMouseMove); window.addEventListener('mouseup', onMouseUp); });
+            function onMouseMove(e) { if(!isDragging) return; var nx = initialLeft + (e.clientX - startX), ny = initialTop + (e.clientY - startY); panel.style.left = Math.max(10, Math.min(nx, window.innerWidth - panel.offsetWidth - 10)) + 'px'; panel.style.top = Math.max(10, Math.min(ny, window.innerHeight - panel.offsetHeight - 10)) + 'px'; }
+            function onMouseUp() { isDragging = false; window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); }
+            header.addEventListener('touchstart', function(e) { if (e.target === toggleBtn) return; isDragging = true; var r = panel.getBoundingClientRect(); startX = e.touches[0].clientX; startY = e.touches[0].clientY; initialLeft = r.left; initialTop = r.top; panel.style.transform = 'none'; panel.style.left = initialLeft + 'px'; panel.style.top = initialTop + 'px'; window.addEventListener('touchmove', onTouchMove, {passive:false}); window.addEventListener('touchend', onTouchEnd); }, {passive:true});
+            function onTouchMove(e) { if(!isDragging) return; e.preventDefault(); var nx = initialLeft + (e.touches[0].clientX - startX), ny = initialTop + (e.touches[0].clientY - startY); panel.style.left = Math.max(10, Math.min(nx, window.innerWidth - panel.offsetWidth - 10)) + 'px'; panel.style.top = Math.max(10, Math.min(ny, window.innerHeight - panel.offsetHeight - 10)) + 'px'; }
+            function onTouchEnd() { isDragging = false; window.removeEventListener('touchmove', onTouchMove); window.removeEventListener('touchend', onTouchEnd); }
+        }
+        makePanelDraggable('panel-sempadan', 'header-sempadan', 'btnToggleSempadan');
+        makePanelDraggable('panel-pref', 'header-pref', 'btnTogglePref');
+        makePanelDraggable('panel-tagging', 'header-tagging', 'btnToggleTagging');
+
+        // TAB SEMPADAN : BINA BARIS
+        var rsoContainer = document.getElementById('rso-container');
+        function createRSORow(type = "Stesen", stnName = "", xVal = "", yVal = "") {
+            var div = document.createElement('div'); div.className = 'rso-row';
+            var selStesen = type === "Stesen" ? "selected" : ""; var selPI = type === "PI" ? "selected" : "";
+            div.innerHTML = `
+                <select class="rso-input type"><option value="Stesen" ${selStesen}>Stesen</option><option value="PI" ${selPI}>PI</option></select>
+                <input type="text" class="rso-input name" placeholder="Label" value="${stnName}">
+                <input type="number" class="rso-input coord x" placeholder="X/Lon" value="${xVal}">
+                <input type="number" class="rso-input coord y" placeholder="Y/Lat" value="${yVal}">
+                <button class="btn-del" onclick="this.parentElement.remove()">🗑️</button>
+            `;
+            rsoContainer.appendChild(div);
+        }
+
+        function initDefaultRows() { rsoContainer.innerHTML = ''; createRSORow("PI", "PI"); createRSORow("Stesen", "A"); createRSORow("Stesen", "B"); createRSORow("Stesen", "C"); }
+        initDefaultRows();
+
+        document.getElementById('btnAddRSO').addEventListener('click', function() {
+            var stnCount = Array.from(rsoContainer.children).filter(r => r.querySelector('.type').value === "Stesen").length;
+            createRSORow("Stesen", String.fromCharCode(65 + stnCount));
+        });
+        document.getElementById('btnKosongkanSem').addEventListener('click', function() {
+            if(confirm("Padam rekod borang ini?")) { rsoContainer.innerHTML = ''; document.getElementById('summarySempadan').style.display = 'none'; sempadanLayer.clearLayers(); stesenLayer.clearLayers(); pokokRujukanLayer.clearLayers(); }
+        });
+
+        // MUAT NAIK FAIL CSV/KML (SEMPADAN)
+        document.getElementById('btnUploadSem').addEventListener('click', function() { document.getElementById('inputUploadSem').click(); });
+        document.getElementById('inputUploadSem').addEventListener('change', function(e) {
+            var file = e.target.files[0]; if (!file) return; var ext = file.name.split('.').pop().toLowerCase();
+            if (ext === 'csv') {
+                Papa.parse(file, { header: true, skipEmptyLines: true, complete: function(results) {
+                    rsoContainer.innerHTML = ''; var count = 0;
+                    results.data.forEach(function(row) {
+                        var xKey = Object.keys(row).find(k => /x|timur|easting|lon|lng/i.test(k)), yKey = Object.keys(row).find(k => /y|utara|northing|lat/i.test(k)), nameKey = Object.keys(row).find(k => /name|nama|stesen|label/i.test(k)), typeKey = Object.keys(row).find(k => /type|jenis|kategori/i.test(k));
+                        if (xKey && yKey) {
+                            var x = parseFloat(row[xKey]), y = parseFloat(row[yKey]);
+                            var name = nameKey ? row[nameKey] : (count === 0 ? "PI" : String.fromCharCode(64 + count));
+                            var type = typeKey ? row[typeKey] : (name.toUpperCase().includes("PI") ? "PI" : "Stesen");
+                            if (x > 90 && x < 120 && y > 0 && y < 10) { var rsoCoords = proj4("EPSG:4326", "EPSG:3168", [x, y]); x = rsoCoords[0]; y = rsoCoords[1]; document.getElementById('datumSelect').value = "EPSG:3168"; }
+                            createRSORow(type, name, x.toFixed(0), y.toFixed(0)); count++;
+                        }
+                    });
+                }});
+            } else if (ext === 'kml') {
+                var reader = new FileReader(); reader.onload = function(e) {
+                    var xmlDoc = new DOMParser().parseFromString(e.target.result,"text/xml");
+                    var coordsArray = [], placemarks = xmlDoc.getElementsByTagName("Placemark");
+                    if(placemarks.length > 1) {
+                        for(var i=0; i<placemarks.length; i++) {
+                            var nameNode = placemarks[i].getElementsByTagName("name")[0];
+                            var cNode = placemarks[i].getElementsByTagName("coordinates")[0];
+                            if(cNode) { var pt = cNode.textContent.trim().split(','); coordsArray.push({name: nameNode ? nameNode.textContent : "S"+(i+1), lon: pt[0], lat: pt[1]}); }
+                        }
+                    } else {
+                        var cNode = xmlDoc.getElementsByTagName("coordinates")[0];
+                        if(cNode) {
+                            cNode.textContent.trim().split(/\s+/).forEach(function(c, i) { var pt = c.split(','); if(pt.length >= 2) { coordsArray.push({name: (i===0) ? "PI" : String.fromCharCode(64+i), lon: pt[0], lat: pt[1]}); } });
+                        }
+                    }
+                    if(coordsArray.length > 0) {
+                        var first = coordsArray[0], last = coordsArray[coordsArray.length-1];
+                        if(coordsArray.length > 3 && first.lon === last.lon && first.lat === last.lat) coordsArray.pop();
+                        rsoContainer.innerHTML = '';
+                        coordsArray.forEach(function(item, index) {
+                            var type = (item.name.toUpperCase().includes("PI") || index === 0) ? "PI" : "Stesen";
+                            var rsoCoords = proj4("EPSG:4326", "EPSG:3168", [parseFloat(item.lon), parseFloat(item.lat)]);
+                            createRSORow(type, item.name, rsoCoords[0].toFixed(0), rsoCoords[1].toFixed(0));
+                        });
+                        document.getElementById('datumSelect').value = "EPSG:3168";
+                    }
+                };
+                reader.readAsText(file);
+            }
+            e.target.value = "";
+        });
+
+        // =========================================================================
+        // LOGIK SIMPAN & LUKIS SEMPADAN
+        // =========================================================================
+        document.getElementById('btnSelesaiRSO').addEventListener('click', function() {
+            var rows = document.querySelectorAll('.rso-row'), coordsSempadan = [], stesenData = [], piData = [];
+            var selectedDatum = document.getElementById('datumSelect').value;
+            
+            rows.forEach(function(r) {
+                var type = r.querySelector('.type').value, name = r.querySelector('.name').value.trim();
+                var x = parseFloat(r.querySelector('.x').value), y = parseFloat(r.querySelector('.y').value);
+                if(!isNaN(x) && !isNaN(y)) {
+                    var wgs = (selectedDatum === "EPSG:4326") ? [x, y] : proj4(selectedDatum, "EPSG:4326", [x, y]); 
+                    if (type === "Stesen") { coordsSempadan.push(wgs); stesenData.push({name: name || 'S'+(stesenData.length+1), lat: wgs[1], lon: wgs[0], rawX: x, rawY: y}); }
+                    else if (type === "PI") { piData.push({name: name || 'PI', lat: wgs[1], lon: wgs[0], rawX: x, rawY: y}); }
+                }
+            });
+            
+            if(coordsSempadan.length >= 3) {
+                var totalDist = 0, htmlLaluan = "", totalPokokRujukan = 0; 
+                pokokRujukanLayer.clearLayers(); 
+                
+                kmlData.pokokRujukan = []; kmlData.piData = piData; kmlData.stesenSempadan = stesenData;
+                
+                if (piData.length > 0 && stesenData.length > 0) {
+                    var ptPI = turf.point([piData[0].lon, piData[0].lat]), ptA = turf.point([stesenData[0].lon, stesenData[0].lat]);
+                    var dPI = turf.distance(ptPI, ptA, {units: 'meters'}), bPI = (turf.bearing(ptPI, ptA) + 360) % 360;
+                    htmlLaluan += `<tr style="background:#f8fafc;"><td style="color:#7e22ce;"><strong>${piData[0].name} ➔ ${stesenData[0].name}</strong></td><td style="font-size:0.65rem; color:#475569;">X: ${piData[0].rawX.toFixed(0)}<br>Y: ${piData[0].rawY.toFixed(0)}</td><td>${dPI.toFixed(0)}</td><td>${bPI.toFixed(0)}</td><td style="color:#94a3b8;">-</td></tr>`;
+                }
+
+                for (var i = 0; i < stesenData.length; i++) {
+                    var pt1 = turf.point([stesenData[i].lon, stesenData[i].lat]);
+                    var nextIdx = (i + 1) % stesenData.length; 
+                    var pt2 = turf.point([stesenData[nextIdx].lon, stesenData[nextIdx].lat]);
+                    
+                    var d = turf.distance(pt1, pt2, {units: 'meters'});
+                    var b = (turf.bearing(pt1, pt2) + 360) % 360;
+                    totalDist += d;
+                    
+                    var pokokRujLaluan = Math.floor(d / 40);
+                    totalPokokRujukan += pokokRujLaluan;
+                    
+                    for (var j = 1; j <= pokokRujLaluan; j++) {
+                        var treeDist = j * 40;
+                        var treePt = turf.destination(pt1, treeDist, b, {units: 'meters'});
+                        var treeLbl = j.toString(); 
+                        
+                        L.marker([treePt.geometry.coordinates[1], treePt.geometry.coordinates[0]], { 
+                            icon: L.divIcon({ className: 'dummy', iconSize: [14,14], iconAnchor: [7,7], html: '<div class="prs-label">'+treeLbl+'</div>' }) 
+                        }).addTo(pokokRujukanLayer);
+                        kmlData.pokokRujukan.push({ point: treePt, name: treeLbl, desc: 'Pokok Rujukan Sempadan (' + stesenData[i].name + ' ke ' + stesenData[nextIdx].name + ')' });
+                    }
+                    
+                    htmlLaluan += `<tr><td><strong>${stesenData[i].name} ➔ ${stesenData[nextIdx].name}</strong></td><td style="font-size:0.65rem; color:#475569;">X: ${stesenData[i].rawX.toFixed(0)}<br>Y: ${stesenData[i].rawY.toFixed(0)}</td><td>${d.toFixed(0)}</td><td>${b.toFixed(0)}</td><td style="color:#059669; font-weight:bold;">${pokokRujLaluan}</td></tr>`;
+                }
+                
+                if(coordsSempadan[0][0] !== coordsSempadan[coordsSempadan.length-1][0] || coordsSempadan[0][1] !== coordsSempadan[coordsSempadan.length-1][1]) { coordsSempadan.push([coordsSempadan[0][0], coordsSempadan[0][1]]); }
+
+                polygonFeature = turf.polygon([coordsSempadan]);
+                var areaHa = turf.area(polygonFeature) / 10000;
+                
+                document.getElementById('sumLuas').innerText = areaHa.toFixed(2);
+                document.getElementById('sumJarakSem').innerText = totalDist.toFixed(0);
+                document.getElementById('sumPokokRuj').innerText = totalPokokRujukan;
+                document.getElementById('tblLaluanSempadan').innerHTML = htmlLaluan;
+                document.getElementById('summarySempadan').style.display = 'block';
+
+                kmlData.sempadan = polygonFeature;
+                sempadanLayer.clearLayers();
+                sempadanLayer.addData(polygonFeature).setStyle({ color: '#059669', weight: 3, fillColor: 'none', fillOpacity: 0.0 });
+                
+                stesenLayer.clearLayers();
+                stesenData.forEach(function(s) {
+                    var m = L.circleMarker([s.lat, s.lon], { color: '#f59e0b', fillColor: '#fbbf24', fillOpacity: 0.9, radius: 6, stationName: s.name }).addTo(stesenLayer);
+                    m.bindTooltip('<b>' + s.name + '</b>', { permanent: true, direction: 'right', className: 'station-label' });
+                });
+                piData.forEach(function(pi) {
+                    var m = L.circleMarker([pi.lat, pi.lon], { color: '#7e22ce', fillColor: '#a855f7', fillOpacity: 0.9, radius: 7, stationName: pi.name }).addTo(stesenLayer);
+                    m.bindTooltip('<b>' + pi.name + '</b>', { permanent: true, direction: 'right', className: 'station-label pi-label' });
+                });
+                
+                isLineLoaded = true; isStesenLoaded = true; activateStationClicks();
+                map.fitBounds(sempadanLayer.getBounds(), { padding: [40, 40] });
+                
+                document.getElementById('panel-sempadan').classList.add('collapsed');
+                document.getElementById('btnToggleSempadan').innerText = '➕';
+
+            } else { alert("⚠️ Peringatan: Anda memerlukan minimum 3 'Stesen' untuk membentuk poligon."); }
+        });
+
+        // EKSPORT KML KHAS SEMPADAN SAHAJA
+        document.getElementById('btnExportSemKML').addEventListener('click', function() {
+            var kmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>Sempadan Kompartmen JPSM</name>\n';
+            kmlHeader += '<Style id="sempadanStyle"><LineStyle><color>ff00aa00</color><width>3</width></LineStyle><PolyStyle><fill>0</fill></PolyStyle></Style>\n';
+            kmlHeader += '<Style id="stationStyle"><IconStyle><scale>0.8</scale></IconStyle><LabelStyle><color>ff00ffff</color><scale>1.0</scale></LabelStyle></Style>\n';
+            kmlHeader += '<Style id="piStyle"><IconStyle><scale>0.8</scale></IconStyle><LabelStyle><color>ffff00aa</color><scale>1.0</scale></LabelStyle></Style>\n';
+            kmlHeader += '<Style id="prsStyle"><IconStyle><scale>0</scale></IconStyle><LabelStyle><color>ff0000ff</color><scale>0.8</scale></LabelStyle></Style>\n'; 
+            
+            var kmlBody = "";
+            if (kmlData.sempadan) { 
+                var coords = kmlData.sempadan.geometry.coordinates[0]; 
+                kmlBody += '<Placemark><name>Sempadan Kompartmen</name><styleUrl>#sempadanStyle</styleUrl><Polygon><outerBoundaryIs><LinearRing><coordinates>' + coords.map(c => c[0] + "," + c[1] + ",0").join(" ") + '</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>\n'; 
+            }
+            if (kmlData.piData) {
+                kmlData.piData.forEach(function(pi) { kmlBody += '<Placemark><name>' + pi.name + '</name><description>Pusat Ikatan</description><styleUrl>#piStyle</styleUrl><Point><coordinates>' + pi.lon + ',' + pi.lat + ',0</coordinates></Point></Placemark>\n'; });
+            }
+            if (kmlData.stesenSempadan) {
+                kmlData.stesenSempadan.forEach(function(s) { kmlBody += '<Placemark><name>' + s.name + '</name><description>Stesen Sempadan</description><styleUrl>#stationStyle</styleUrl><Point><coordinates>' + s.lon + ',' + s.lat + ',0</coordinates></Point></Placemark>\n'; });
+            }
+            if (kmlData.pokokRujukan) {
+                kmlData.pokokRujukan.forEach(function(prs) { kmlBody += '<Placemark><name>' + prs.name + '</name><description>' + prs.desc + '</description><styleUrl>#prsStyle</styleUrl><Point><coordinates>' + prs.point.geometry.coordinates[0] + ',' + prs.point.geometry.coordinates[1] + ',0</coordinates></Point></Placemark>\n'; });
+            }
+            var blob = new Blob([kmlHeader + kmlBody + '</Document>\n</kml>'], { type: "application/vnd.google-earth.kml+xml" });
+            var url = window.URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = "Sempadan_Kawasan_Kerja.kml"; document.body.appendChild(a); a.click(); document.body.removeChild(a); window.URL.revokeObjectURL(url);
+        });
+
+        // =========================================================================
+        // PETA KLIK LOGIK (PRE-F & TAGGING POKOK BERKONGSI FUNGSI SAMA)
+        // =========================================================================
+        function activateStationClicks() { 
+            if (isStesenLoaded && isLineLoaded) { 
+                stesenLayer.eachLayer(function(layer) { 
+                    layer.off('click'); 
+                    layer.on('click', function() { handleStationClick(this.options.stationName, this.getLatLng()); }); 
+                    layer.setStyle({ cursor: 'pointer' }); 
+                }); 
+            } 
+        }
+        
+        function handleStationClick(name, latlng) {
+            if (currentActiveTab !== 'tab-pref' && currentActiveTab !== 'tab-tagging') return;
+
+            if (!pgtPoint) {
+                pgtPoint = turf.point([latlng.lng, latlng.lat]); pgtName = name;
+                
+                document.getElementById('pgtDisplay').innerText = name; document.getElementById('pgtDisplay').classList.add('active');
+                document.getElementById('btnResetGT').style.display = 'block'; 
+                
+                document.getElementById('pgtDisplayTag').innerText = name; document.getElementById('pgtDisplayTag').classList.add('active');
+                document.getElementById('btnResetGTTag').style.display = 'block'; 
+                
+                L.circleMarker(latlng, { color: 'red', fillColor: 'red', radius: 7, fillOpacity: 1 }).addTo(markersLayer);
+                L.marker(latlng, { icon: L.divIcon({ className: 'dummy', iconSize: [30,15], iconAnchor: [15,25], html: '<span class="pgt-tgt-label pgt-label">PGT</span>' }) }).addTo(markersLayer);
+                kmlData.pgtMarker = pgtPoint;
+            } 
+            else if (!tgtPoint && name !== pgtName) {
+                tgtPoint = turf.point([latlng.lng, latlng.lat]); tgtName = name;
+                
+                document.getElementById('tgtDisplay').innerText = name; document.getElementById('tgtDisplay').classList.add('active');
+                document.getElementById('btnGenerate').disabled = false;
+                
+                document.getElementById('tgtDisplayTag').innerText = name; document.getElementById('tgtDisplayTag').classList.add('active');
+                document.getElementById('btnGenerateTagging').disabled = false; 
+                
+                L.circleMarker(latlng, { color: '#0f172a', fillColor: '#0f172a', radius: 7, fillOpacity: 1 }).addTo(markersLayer);
+                L.marker(latlng, { icon: L.divIcon({ className: 'dummy', iconSize: [30,15], iconAnchor: [15,25], html: '<span class="pgt-tgt-label tgt-label">TGT</span>' }) }).addTo(markersLayer);
+                var gtLine = turf.lineString([pgtPoint.geometry.coordinates, tgtPoint.geometry.coordinates]);
+                gtLayer.addData(gtLine); kmlData.gt = gtLine; kmlData.tgtMarker = tgtPoint; 
+            }
+        }
+
+        function resetGarisTapak() {
+            pgtPoint = null; pgtName = null; tgtPoint = null; tgtName = null;
+            
+            document.getElementById('pgtDisplay').innerText = "Tunggu..."; document.getElementById('pgtDisplay').classList.remove('active');
+            document.getElementById('tgtDisplay').innerText = "Tunggu..."; document.getElementById('tgtDisplay').classList.remove('active');
+            document.getElementById('btnResetGT').style.display = 'none'; document.getElementById('btnGenerate').disabled = true; 
+            
+            document.getElementById('pgtDisplayTag').innerText = "Tunggu..."; document.getElementById('pgtDisplayTag').classList.remove('active');
+            document.getElementById('tgtDisplayTag').innerText = "Tunggu..."; document.getElementById('tgtDisplayTag').classList.remove('active');
+            document.getElementById('btnResetGTTag').style.display = 'none'; document.getElementById('btnGenerateTagging').disabled = true;
+            
+            gtLayer.clearLayers(); giLayer.clearLayers(); petakLayer.clearLayers(); markersLayer.clearLayers();
+            garisKawalanLayer.clearLayers(); blokTaggingLayer.clearLayers();
+            
+            kmlData.giLines = []; kmlData.petakPolygons = []; kmlData.petakLabels = []; kmlData.giLabels = [];
+            
+            document.getElementById('summaryCardsPref').style.display = 'none'; document.getElementById('btnExportKML').style.display = 'none';
+            document.getElementById('summaryCardsTagging').style.display = 'none';
+            document.getElementById('tblTaggingBlok').style.display = 'none';
+        }
+        document.getElementById('btnResetGT').addEventListener('click', resetGarisTapak);
+        document.getElementById('btnResetGTTag').addEventListener('click', resetGarisTapak);
+
+        // =========================================================================
+        // UTILITI KLIP POLIGON
+        // =========================================================================
+        function clipLineToPolygon(startPt, bearing, polygon) {
+            var rayDist = 5, totalDist = 0, maxDist = 3500; var currentPt = startPt, path = [currentPt.geometry.coordinates];
+            while (totalDist < maxDist) { var nextPt = turf.destination(currentPt, rayDist, bearing, { units: 'meters' }); if (turf.booleanPointInPolygon(nextPt, polygon)) { path.push(nextPt.geometry.coordinates); currentPt = nextPt; totalDist += rayDist; } else { break; } }
+            if (path.length > 1) return turf.lineString(path); return null;
+        }
+
+        // =========================================================================
+        // JANAAN PETAK PRE-F (DITUTUP SEMASA TAGGING POKOK)
+        // =========================================================================
+        document.getElementById('btnGenerate').addEventListener('click', function() {
+            if (!polygonFeature || !pgtPoint || !tgtPoint) return;
+            giLayer.clearLayers(); petakLayer.clearLayers(); kmlData.giLines = []; kmlData.petakPolygons = []; kmlData.petakLabels = []; kmlData.giLabels = [];
+            
+            var distance = turf.distance(pgtPoint, tgtPoint, { units: 'meters' }), gtBearing = (turf.bearing(pgtPoint, tgtPoint) + 360) % 360; 
+            var giBearingLeft = (gtBearing - 90 + 360) % 360, giBearingRight = (gtBearing + 90) % 360;
+            var currentDist = 50, giIndex = 1, totalPetakCount = 0;
+            
+            function generateNestedPlots(pStart, giBearing, currentPetakLabel, isLeft) {
+                var plotLayers = []; var perpBearingLeft = (giBearing - 90 + 360) % 360, perpBearingRight = (giBearing + 90) % 360;
+                function buildPolyCentered(widthAlongGI, widthPerpTotal, startPoint) {
+                    var halfWidth = widthPerpTotal / 2.0; var p1 = startPoint; var p2 = turf.destination(p1, widthAlongGI, giBearing, { units: 'meters' });
+                    return turf.polygon([[ turf.destination(p1, halfWidth, perpBearingLeft, { units: 'meters' }).geometry.coordinates, turf.destination(p2, halfWidth, perpBearingLeft, { units: 'meters' }).geometry.coordinates, turf.destination(p2, halfWidth, perpBearingRight, { units: 'meters' }).geometry.coordinates, turf.destination(p1, halfWidth, perpBearingRight, { units: 'meters' }).geometry.coordinates, turf.destination(p1, halfWidth, perpBearingLeft, { units: 'meters' }).geometry.coordinates ]]);
+                }
+                plotLayers.push({ geo: buildPolyCentered(50, 20, pStart), style: { color: '#ff9900', weight: 2, fillOpacity: 0.0 }, name: "Petak Utama " + currentPetakLabel });
+                var startSubA = isLeft ? turf.destination(pStart, 25, giBearing, { units: 'meters' }) : pStart; var startSubB = isLeft ? pStart : turf.destination(pStart, 25, giBearing, { units: 'meters' });
+                plotLayers.push({ geo: buildPolyCentered(25, 20, startSubA), style: { color: '#00bcd4', weight: 2, fillOpacity: 0.0 }, name: "Sub-Petak A " + currentPetakLabel });
+                plotLayers.push({ geo: buildPolyCentered(25, 20, startSubB), style: { color: '#00bcd4', weight: 1.5, dashArray: '4, 4', fillOpacity: 0.0 }, name: "Sub-Petak B " + currentPetakLabel });
+                function buildSmallNestedPoly(w, h) {
+                    var p1 = isLeft ? turf.destination(pStart, 50, giBearing, { units: 'meters' }) : pStart;
+                    var p2 = turf.destination(p1, w, isLeft ? (giBearing + 180)%360 : giBearing, { units: 'meters' });
+                    var p3 = turf.destination(p2, h, isLeft ? perpBearingRight : perpBearingLeft, { units: 'meters' });
+                    var p4 = turf.destination(p1, h, isLeft ? perpBearingRight : perpBearingLeft, { units: 'meters' });
+                    return turf.polygon([[ p1.geometry.coordinates, p2.geometry.coordinates, p3.geometry.coordinates, p4.geometry.coordinates, p1.geometry.coordinates ]]);
+                }
+                plotLayers.push({ geo: buildSmallNestedPoly(10, 10), style: { color: '#2e7d32', weight: 2, fillOpacity: 0.0 }, name: "Sub-Petak 3 (10x10) " + currentPetakLabel });
+                plotLayers.push({ geo: buildSmallNestedPoly(5, 5), style: { color: '#d32f2f', weight: 2, fillOpacity: 0.0 }, name: "Sub-Petak 4 (5x5) " + currentPetakLabel });
+                plotLayers.push({ geo: buildSmallNestedPoly(2, 2), style: { color: '#7b1fa2', weight: 2, fillOpacity: 0.0 }, name: "Sub-Petak 5 (2x2) " + currentPetakLabel });
+                return plotLayers;
+            }
+
+            while (currentDist <= distance) {
+                var ptOnGt = turf.destination(pgtPoint, currentDist, gtBearing, { units: 'meters' }); var giLabel = "GI " + giIndex; var petakCountOnThisGI = 1; var giClipped = false;
+                var clippedRight = clipLineToPolygon(ptOnGt, giBearingRight, polygonFeature);
+                if (clippedRight) {
+                    giClipped = true; L.geoJSON(clippedRight, {style: {color:'blue', weight:2.5}}).addTo(giLayer); kmlData.giLines.push({ geo: clippedRight, name: giLabel + " (Kanan)" });
+                    var distAlongGI = 25, lineLen = turf.length(clippedRight, { units: 'meters' });
+                    while (distAlongGI + 50 <= lineLen) {
+                        var pStart = turf.destination(ptOnGt, distAlongGI, giBearingRight, { units: 'meters' }), pMid = turf.destination(pStart, 25, giBearingRight, { units: 'meters' });
+                        if (turf.booleanPointInPolygon(pMid, polygonFeature)) {
+                            var pName = "P" + petakCountOnThisGI;
+                            generateNestedPlots(pStart, giBearingRight, giLabel+" - "+pName, false).forEach(function(p) { L.geoJSON(p.geo, {style:p.style}).addTo(petakLayer); kmlData.petakPolygons.push(p); });
+                            var lblPt = turf.destination(pStart, 25, giBearingRight, { units: 'meters' });
+                            L.marker([lblPt.geometry.coordinates[1], lblPt.geometry.coordinates[0]], { icon: L.divIcon({ className: 'dummy', html: '<span class="plot-label">'+pName+'</span>' }) }).addTo(petakLayer);
+                            kmlData.petakLabels.push({ point: lblPt, label: giLabel+" - "+pName, shortLabel: pName }); petakCountOnThisGI++; totalPetakCount++;
+                        }
+                        distAlongGI += 100;
+                    }
+                }
+                var clippedLeft = clipLineToPolygon(ptOnGt, giBearingLeft, polygonFeature);
+                if (clippedLeft) {
+                    giClipped = true; L.geoJSON(clippedLeft, {style: {color:'blue', weight:2.5}}).addTo(giLayer); kmlData.giLines.push({ geo: clippedLeft, name: giLabel + " (Kiri)" });
+                    var distAlongGI = 25, lineLen = turf.length(clippedLeft, { units: 'meters' });
+                    while (distAlongGI + 50 <= lineLen) {
+                        var pStart = turf.destination(ptOnGt, distAlongGI, giBearingLeft, { units: 'meters' }), pMid = turf.destination(pStart, 25, giBearingLeft, { units: 'meters' });
+                        if (turf.booleanPointInPolygon(pMid, polygonFeature)) {
+                            var pName = "P" + petakCountOnThisGI;
+                            generateNestedPlots(pStart, giBearingLeft, giLabel+" - "+pName, true).forEach(function(p) { L.geoJSON(p.geo, {style:p.style}).addTo(petakLayer); kmlData.petakPolygons.push(p); });
+                            var lblPt = turf.destination(pStart, 25, giBearingLeft, { units: 'meters' });
+                            L.marker([lblPt.geometry.coordinates[1], lblPt.geometry.coordinates[0]], { icon: L.divIcon({ className: 'dummy', html: '<span class="plot-label">'+pName+'</span>' }) }).addTo(petakLayer);
+                            kmlData.petakLabels.push({ point: lblPt, label: giLabel+" - "+pName, shortLabel: pName }); petakCountOnThisGI++; totalPetakCount++;
+                        }
+                        distAlongGI += 100;
+                    }
+                }
+                if(giClipped) { 
+                    L.marker([ptOnGt.geometry.coordinates[1], ptOnGt.geometry.coordinates[0]], { icon: L.divIcon({ className: 'dummy', html: '<span class="gi-label">' + giLabel + '</span>' }) }).addTo(giLayer);
+                    kmlData.giLabels.push({ point: ptOnGt, label: giLabel }); giIndex++; 
+                }
+                currentDist += 100;
+            }
+            document.getElementById('sumGtDist').innerText = distance.toFixed(0); document.getElementById('sumGtBearing').innerText = gtBearing.toFixed(0); 
+            document.getElementById('sumGiBearingKanan').innerText = giBearingRight.toFixed(0); document.getElementById('sumGiBearingKiri').innerText = giBearingLeft.toFixed(0); 
+            document.getElementById('sumGiCount').innerText = (giIndex - 1); document.getElementById('sumPetakCount').innerText = totalPetakCount;
+            document.getElementById('summaryCardsPref').style.display = 'grid'; document.getElementById('btnExportKML').style.display = 'block';
+            
+            document.getElementById('panel-pref').classList.add('collapsed');
+            document.getElementById('btnTogglePref').innerText = '➕';
+        });
+
+        // =========================================================================
+        // JANAAN PELAN TAGGING (BLOK BANCIAN B1,B2... & PETAK 50x50m)
+        // =========================================================================
+        document.getElementById('btnGenerateTagging').addEventListener('click', function() {
+            if (!polygonFeature || !pgtPoint || !tgtPoint) return;
+            
+            garisKawalanLayer.clearLayers();
+            blokTaggingLayer.clearLayers();
+
+            var distance = turf.distance(pgtPoint, tgtPoint, { units: 'meters' });
+            var gtBearing = (turf.bearing(pgtPoint, tgtPoint) + 360) % 360;
+            var giBearingLeft = (gtBearing - 90 + 360) % 360;
+            var giBearingRight = (gtBearing + 90) % 360;
+
+            var currentDist = 0;
+            var segmentIndex = 0;
+            var totalBlok = 0;
+            var totalPetakKsl = 0;
+            var senaraiBlok = [];
+
+            while (currentDist < distance) {
+                var nextDist = Math.min(currentDist + 50, distance);
+                var ptCurrent = turf.destination(pgtPoint, currentDist, gtBearing, { units: 'meters' });
+
+                // 1. LUKIS GARIS KAWALAN (Setiap 50m) KECUALI TITIK 0m
+                if (currentDist > 0) {
+                    var clippedRightGK = clipLineToPolygon(ptCurrent, giBearingRight, polygonFeature);
+                    if (clippedRightGK) { L.geoJSON(clippedRightGK, { style: { color: '#8b5cf6', weight: 2.5, dashArray: '5,5' } }).addTo(garisKawalanLayer); }
+                    
+                    var clippedLeftGK = clipLineToPolygon(ptCurrent, giBearingLeft, polygonFeature);
+                    if (clippedLeftGK) { L.geoJSON(clippedLeftGK, { style: { color: '#8b5cf6', weight: 2.5, dashArray: '5,5' } }).addTo(garisKawalanLayer); }
+                }
+
+                // 2. NOMBOR BLOK (Kanan = Ganjil, Kiri = Genap)
+                var noBlokKanan = (segmentIndex * 2) + 1;
+                var noBlokKiri = (segmentIndex * 2) + 2;
+
+                var midDist = currentDist + ((nextDist - currentDist) / 2);
+                var ptMidGt = turf.destination(pgtPoint, midDist, gtBearing, { units: 'meters' });
+
+                function binaPetakTagging(bearingPerp, labelBlok) {
+                    var rayDist = 5, totalPerpDist = 0, maxDist = 3500; 
+                    var curPt = ptMidGt;
+                    while (totalPerpDist < maxDist) { 
+                        var nPt = turf.destination(curPt, rayDist, bearingPerp, { units: 'meters' }); 
+                        if (turf.booleanPointInPolygon(nPt, polygonFeature)) { 
+                            curPt = nPt; totalPerpDist += rayDist; 
+                        } else { break; } 
+                    }
+
+                    var distPerp = 0;
+                    var petakIdx = 1;
+                    var blokDicipta = false;
+                    var bilPetakUtkBlokIni = 0;
+
+                    while (distPerp < totalPerpDist) {
+                        var p1 = turf.destination(turf.destination(pgtPoint, currentDist, gtBearing, {units:'meters'}), distPerp, bearingPerp, {units:'meters'});
+                        var p2 = turf.destination(turf.destination(pgtPoint, nextDist, gtBearing, {units:'meters'}), distPerp, bearingPerp, {units:'meters'});
+                        var p3 = turf.destination(turf.destination(pgtPoint, nextDist, gtBearing, {units:'meters'}), distPerp + 50, bearingPerp, {units:'meters'});
+                        var p4 = turf.destination(turf.destination(pgtPoint, currentDist, gtBearing, {units:'meters'}), distPerp + 50, bearingPerp, {units:'meters'});
+                        var poly = turf.polygon([[p1.geometry.coordinates, p2.geometry.coordinates, p3.geometry.coordinates, p4.geometry.coordinates, p1.geometry.coordinates]]);
+                        
+                        var clippedPoly = turf.intersect(poly, polygonFeature);
+                        
+                        if (clippedPoly) {
+                            blokDicipta = true;
+                            L.geoJSON(clippedPoly, { style: { color: '#8b5cf6', weight: 1.5, fillOpacity: 0.0, dashArray: '4,4' } }).addTo(blokTaggingLayer);
+                            
+                            var centroid = turf.centroid(clippedPoly);
+                            L.marker([centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]], {
+                                icon: L.divIcon({ className: 'dummy', iconSize:[20,10], iconAnchor:[10,5], html: '<span class="tag-plot-label">P' + petakIdx + '</span>' })
+                            }).addTo(blokTaggingLayer);
+                            
+                            petakIdx++;
+                            bilPetakUtkBlokIni++;
+                            totalPetakKsl++;
+                        }
+                        distPerp += 50;
+                    }
+
+                    if (blokDicipta) {
+                        var ptLabel = turf.destination(ptMidGt, 15, bearingPerp, { units: 'meters' });
+                        if(turf.booleanPointInPolygon(ptLabel, polygonFeature)) {
+                            L.marker([ptLabel.geometry.coordinates[1], ptLabel.geometry.coordinates[0]], {
+                                icon: L.divIcon({ className: 'dummy', iconSize:[20,10], iconAnchor:[10,5], html: '<span class="blok-label">B' + labelBlok + '</span>' })
+                            }).addTo(blokTaggingLayer);
+                        } else {
+                            L.marker([ptMidGt.geometry.coordinates[1], ptMidGt.geometry.coordinates[0]], {
+                                icon: L.divIcon({ className: 'dummy', iconSize:[20,10], iconAnchor:[10,5], html: '<span class="blok-label">B' + labelBlok + '</span>' })
+                            }).addTo(blokTaggingLayer);
+                        }
+                        
+                        senaraiBlok.push({ nama: 'B' + labelBlok, bil: bilPetakUtkBlokIni });
+                        totalBlok++;
+                    }
+                }
+
+                binaPetakTagging(giBearingRight, noBlokKanan); // Kanan (Ganjil)
+                binaPetakTagging(giBearingLeft, noBlokKiri);   // Kiri (Genap)
+
+                currentDist += 50;
+                segmentIndex++;
+            }
+
+            // Kemas Kini UI Tagging
+            document.getElementById('sumTagGtDist').innerText = distance.toFixed(0);
+            document.getElementById('sumTagBlokCount').innerText = totalBlok;
+            document.getElementById('sumTagPetakCount').innerText = totalPetakKsl;
+            
+            // Susun nama blok ikut urutan (B1, B2, B3...)
+            senaraiBlok.sort(function(a, b) {
+                return parseInt(a.nama.substring(1)) - parseInt(b.nama.substring(1));
+            });
+            
+            var tbody = "";
+            senaraiBlok.forEach(function(b) {
+                tbody += '<tr><td><strong>' + b.nama + '</strong></td><td style="color:#7e22ce;">' + b.bil + ' Petak</td></tr>';
+            });
+            document.getElementById('tblTaggingBlokBody').innerHTML = tbody;
+            
+            document.getElementById('summaryCardsTagging').style.display = 'grid';
+            document.getElementById('tblTaggingBlok').style.display = 'table';
+            
+            // Auto Sorok Panel Tagging
+            document.getElementById('panel-tagging').classList.add('collapsed');
+            document.getElementById('btnToggleTagging').innerText = '➕';
+        });
+
+    </script>
+</body>
+</html>
